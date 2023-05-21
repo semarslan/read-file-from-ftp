@@ -97,3 +97,81 @@ public class FtpFileReaderConfig {
     }
 
 }
+
+@Configuration
+@EnableBatchProcessing
+public class BatchConfig {
+
+   // ... other beans and configurations
+
+   @Bean
+   public PatternMatchingCompositeLineMapper<Transaction> lineMapper() {
+      PatternMatchingCompositeLineMapper<Transaction> lineMapper = new PatternMatchingCompositeLineMapper<>();
+
+      Map<String, LineTokenizer> tokenizers = new HashMap<>();
+      tokenizers.put("HEADER", createHeaderLineTokenizer());
+      tokenizers.put("TRANSACTION", createTransactionLineTokenizer());
+
+      Map<String, FieldSetMapper<Transaction>> mappers = new HashMap<>();
+      mappers.put("HEADER", createHeaderFieldSetMapper());
+      mappers.put("TRANSACTION", createTransactionFieldSetMapper());
+
+      lineMapper.setTokenizers(tokenizers);
+      lineMapper.setFieldSetMappers(mappers);
+
+      return lineMapper;
+   }
+
+   private LineTokenizer createHeaderLineTokenizer() {
+      DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer(";");
+      tokenizer.setNames("transactionDate", "valör", "transactionType");
+      return tokenizer;
+   }
+
+   private LineTokenizer createTransactionLineTokenizer() {
+      DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer("\t");
+      tokenizer.setNames("transactionType", "commissionAmount", "rewardTotal", "serviceCommission");
+      return tokenizer;
+   }
+
+   private FieldSetMapper<Transaction> createHeaderFieldSetMapper() {
+      return fieldSet -> null; // Skip the header line
+   }
+
+   private FieldSetMapper<Transaction> createTransactionFieldSetMapper() {
+      BeanWrapperFieldSetMapper<Transaction> mapper = new BeanWrapperFieldSetMapper<>();
+      mapper.setTargetType(Transaction.class);
+      return mapper;
+   }
+
+   @Bean
+   public FlatFileItemReader<Transaction> reader() {
+      FlatFileItemReader<Transaction> reader = new FlatFileItemReader<>();
+      reader.setResource(new ClassPathResource("transactions.txt"));
+      reader.setLineMapper(lineMapper());
+      reader.setLinesToSkip(1); // Skip the header line
+      return reader;
+   }
+
+   @Bean
+   public ItemProcessor<Transaction, Transaction> processor() {
+      return new TransactionItemProcessor();
+   }
+
+   @Bean
+   public ItemWriter<Transaction> writer() {
+      return new TransactionItemWriter();
+   }
+
+   @Bean
+   public Step step(ItemReader<Transaction> reader, ItemProcessor<Transaction, Transaction> processor, ItemWriter<Transaction> writer) {
+      return stepBuilderFactory.get("step")
+            .<Transaction, Transaction>chunk(10)
+            .reader(reader)
+            .processor(processor)
+            .writer(writer)
+            .build();
+   }
+
+   // ... job configuration
+}
